@@ -1,0 +1,49 @@
+
+name: Build Noor Al Iman APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Noor-Al-Iman-Android-Source.zip'
+      - '.github/workflows/build-android-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Extract Android project
+        run: |
+          mkdir source
+          unzip -o Noor-Al-Iman-Android-Source.zip -d source
+          GRADLEW=$(find source -type f -name gradlew | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "Gradle wrapper not found in ZIP"
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$GRADLEW")
+          chmod +x "$GRADLEW"
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Noor-Al-Iman-APK
+          path: source/**/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          
