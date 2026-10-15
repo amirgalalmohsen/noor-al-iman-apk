@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      -Noor-Al-Iman-Full-Project.zip
+            - 'Noor-Al-Iman-Full-Project.zip'
       - '.github/workflows/build-android-apk.yml'
 
 permissions:
@@ -28,7 +28,7 @@ jobs:
       - name: Extract Android project
         run: |
           mkdir source
-          unzip -Noor-Al-Iman-Full-Project.zip
+                    unzip -o Noor-Al-Iman-Full-Project.zip -d source
           GRADLEW=$(find source -type f -name gradlew | head -n 1)
           if [ -z "$GRADLEW" ]; then
             echo "Gradle wrapper not found in ZIP"
