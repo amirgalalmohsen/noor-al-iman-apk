@@ -29,7 +29,10 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # Avoid automatic package installation here; the next step installs only supported SDK packages.
+          packages: ''
 
       - name: Install Android SDK packages
         run: |
@@ -50,7 +53,7 @@ jobs:
           elif [[ -f "Noor-Al-Iman-Android-Source.zip" ]]; then
             ZIP_FILE="Noor-Al-Iman-Android-Source.zip"
           else
-            echo "::error::No project ZIP was found."
+            echo "::error::No project ZIP was found in the repository."
             ls -lah
             exit 1
           fi
@@ -60,53 +63,47 @@ jobs:
           unzip -q "$ZIP_FILE" -d source
 
           GRADLEW="$(find "$GITHUB_WORKSPACE/source" -type f -name gradlew -print -quit)"
-
           if [[ -z "$GRADLEW" ]]; then
-            echo "::error::Gradle wrapper was not found in the ZIP."
+            echo "::error::The selected ZIP does not contain a Gradle wrapper (gradlew)."
             find source -maxdepth 4 -type f | head -100
             exit 1
           fi
 
           PROJECT_DIR="$(cd "$(dirname "$GRADLEW")" && pwd)"
-
           if [[ ! -f "$PROJECT_DIR/settings.gradle.kts" && ! -f "$PROJECT_DIR/settings.gradle" ]]; then
-            echo "::error::Gradle project settings were not found."
+            echo "::error::Gradle project settings were not found beside gradlew."
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Selected Android project: $PROJECT_DIR"
+          echo "Selected Android project directory: $PROJECT_DIR"
 
       - name: Build debug APK
         shell: bash
         run: |
           set -euo pipefail
-
           chmod +x "$PROJECT_DIR/gradlew"
-
           "$PROJECT_DIR/gradlew" \
             --no-daemon \
             --stacktrace \
             clean assembleDebug \
             -PappVersion="1.0.${GITHUB_RUN_NUMBER}"
 
-          APK_FILE="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
-            -maxdepth 1 -type f -name '*.apk' -print -quit)"
-
+          APK_FILE="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -maxdepth 1 -type f -name '*.apk' -print -quit)"
           if [[ -z "$APK_FILE" || ! -f "$APK_FILE" ]]; then
-            echo "::error::No debug APK was generated."
+            echo "::error::Gradle finished but no debug APK was found."
             find "$PROJECT_DIR/app/build/outputs" -maxdepth 6 -type f 2>/dev/null || true
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$APK_FILE" "$GITHUB_WORKSPACE/dist/Noor-Al-Iman.apk"
+          echo "APK_FILE=$GITHUB_WORKSPACE/dist/Noor-Al-Iman.apk" >> "$GITHUB_ENV"
 
-      - name: Verify APK package
+      - name: Verify APK is a real installable package
         shell: bash
         run: |
           set -euo pipefail
-
           APK="$GITHUB_WORKSPACE/dist/Noor-Al-Iman.apk"
 
           if [[ ! -s "$APK" ]]; then
@@ -119,28 +116,23 @@ jobs:
           ls -lh "$APK"
 
           if (( SIZE_BYTES < 1048576 )); then
-            echo "::error::APK is smaller than 1 MiB. Refusing to publish suspicious output."
+            echo "::error::The APK is smaller than 1 MiB; refusing to publish a suspicious output."
             exit 1
           fi
 
           unzip -t "$APK"
-
-          AAPT="$(find "$ANDROID_HOME/build-tools" \
-            -type f -name aapt -print | sort -V | tail -n 1)"
-
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
           if [[ -z "$AAPT" ]]; then
             echo "::error::Android aapt tool was not found."
             exit 1
           fi
 
           BADGING="$("$AAPT" dump badging "$APK")"
-
           echo "$BADGING" | grep -q "package: name='com.amirgalal.nooreleman'" || {
-            echo "::error::Unexpected Android application package."
+            echo "::error::The APK package name is not com.amirgalal.nooreleman."
             echo "$BADGING" | head -20
             exit 1
           }
-
           echo "$BADGING" | grep -E "^(package:|sdkVersion:|targetSdkVersion:)" || true
 
       - name: Upload APK artifact
@@ -158,14 +150,15 @@ jobs:
           tag_name: noor-al-iman-build-${{ github.run_number }}
           name: Noor Al-Iman APK build ${{ github.run_number }}
           body: |
-            تم بناء ملف APK لتطبيق نور الإيمان والتحقق من سلامة الحزمة.
+            تم بناء ملف APK لتطبيق نور الإيمان والتحقق من سلامة الحزمة واسم التطبيق.
 
-            اسم الحزمة: com.amirgalal.nooreleman
+            اسم الحزمة: `com.amirgalal.nooreleman`
             نوع النسخة: Debug APK قابل للاختبار.
 
-            يجب اختبار وظائف التطبيق والتنبيهات على الهاتف.
+            ملاحظة: يجب اختبار وظائف التطبيق والتنبيهات على الهاتف قبل اعتبار النسخة جاهزة للإنتاج.
           files: dist/Noor-Al-Iman.apk
           draft: false
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
